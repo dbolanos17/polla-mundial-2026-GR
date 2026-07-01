@@ -28,7 +28,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--dark);color:va
 .tbtn:hover{background:var(--navy);color:#fff;border-color:var(--navy);}
 .tbtn.danger{border-color:var(--red);color:var(--red);}
 .tbtn.danger:hover{background:var(--red);color:#fff;}
-.portada{min-height:100vh;display:flex;flex-direction:column;
+.portada{min-height:100vh;width:100%;display:flex;flex-direction:column;
   background:radial-gradient(ellipse at 50% -10%,rgba(27,48,112,.8) 0%,transparent 65%),
     linear-gradient(180deg,#040710 0%,#070c1f 50%,#0a1228 100%);}
 .portada-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px 60px;text-align:center;position:relative;}
@@ -248,7 +248,7 @@ textarea.field-inp{resize:vertical;min-height:80px;}
     <div class="portada-tag">USA · Canadá · México &nbsp;|&nbsp; 11 Jun – 19 Jul 2026</div>
     <div class="prize-box">
       <div class="prize-lbl">🏆 Premio al Ganador</div>
-      <div class="prize-val">Smart TV 75"</div>
+      <div class="prize-val">Smart TV 65"</div>
       <div class="prize-sub">Cortesía de GlobalRatings</div>
     </div>
     <div class="cd-wrap">
@@ -307,7 +307,7 @@ textarea.field-inp{resize:vertical;min-height:80px;}
   </div>
   <div class="main-nav">
     <div class="mnav-tab active" data-tab="pronosticos" onclick="switchTab('pronosticos')">📋 Registro</div>
-    <div class="mnav-tab" data-tab="mispicks" onclick="switchTab('mispicks')">🎯 Mis Picks</div>
+    <div class="mnav-tab" data-tab="mispicks" onclick="switchTab('mispicks')">🎯 Mis Pronósticos</div>
     <div class="mnav-tab" data-tab="ranking" onclick="switchTab('ranking')">🏆 Ranking</div>
     <div class="mnav-tab" data-tab="partidos" onclick="switchTab('partidos')">📅 Partidos</div>
     <div class="mnav-tab" data-tab="admin" onclick="switchTab('admin')">🔐 Admin</div>
@@ -317,8 +317,9 @@ textarea.field-inp{resize:vertical;min-height:80px;}
   <div class="view" id="view-ranking"><div id="ranking-content"></div></div>
   <div class="view" id="view-partidos">
     <div class="sec-head"><div class="sec-title">📅 Todos los partidos</div><div class="sec-sub">Horario Ecuador (UTC-5)</div></div>
+    <div id="partidos-phase-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"></div>
     <select class="field-inp" id="partidos-player-sel" onchange="renderPartidos()" style="max-width:280px;margin-bottom:12px;">
-      <option value="">— Selecciona participante para ver pronósticos —</option>
+      <option value="">— Ver pronósticos de un participante —</option>
     </select>
     <div id="partidos-content"></div>
   </div>
@@ -698,7 +699,11 @@ function updateCD(){
 (function syncCD(){updateCD();const ms=1000-(Date.now()%1000);setTimeout(function t(){updateCD();setTimeout(t,1000);},ms);})();
 
 // NAV
-function showPortada(){document.getElementById('portada').style.display='flex';document.getElementById('app-shell').style.display='none';}
+function showPortada(){
+  document.getElementById('portada').style.cssText='display:flex;width:100%;';
+  document.getElementById('app-shell').style.display='none';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
 function showApp(tab='pronosticos'){
   document.getElementById('portada').style.display='none';
   document.getElementById('app-shell').style.display='block';
@@ -1090,20 +1095,77 @@ function renderRanking(){
     </div>`).join('');
 }
 
-// PARTIDOS VIEW
+// PARTIDOS VIEW — phase filter state
+let partidosPhase='all';
+const PHASE_LABELS={all:'Todos',group:'Grupos',r32:'R32',r16:'Octavos',qf:'Cuartos',sf:'Semi',tp:'3er/4to',final:'Final'};
+
+function setPartidosPhase(ph){partidosPhase=ph;renderPartidos();}
+
+function toggleDateGroup(dateKey){
+  const el=document.getElementById('dg-'+dateKey);
+  const icon=document.getElementById('dg-icon-'+dateKey);
+  if(!el)return;
+  const hidden=el.style.display==='none';
+  el.style.display=hidden?'block':'none';
+  if(icon)icon.textContent=hidden?'▼':'▶';
+}
+
 function renderPartidos(){
+  // Phase filter buttons
+  const phaseEl=document.getElementById('partidos-phase-btns');
+  if(phaseEl){
+    phaseEl.innerHTML=Object.entries(PHASE_LABELS).map(([k,l])=>
+      `<button class="gtab ${partidosPhase===k?'active':''}" onclick="setPartidosPhase('${k}')" style="font-size:.72rem;padding:5px 11px;">${l}</button>`
+    ).join('');
+  }
+
+  // Participant selector
   const selId=document.getElementById('partidos-player-sel')?.value;
   const part=selId?S.participants.find(p=>p.id===selId):null;
   const sel=document.getElementById('partidos-player-sel');
-  if(sel)sel.innerHTML='<option value="">— Selecciona participante para ver pronósticos —</option>'+S.participants.map(p=>`<option value="${p.id}" ${p.id===selId?'selected':''}>${p.name}</option>`).join('');
-  const groups=[...new Set(S.matches.map(m=>m.group))];
-  let h='';
-  groups.forEach(grp=>{
-    h+=`<div class="grp-hdr">${grp}</div>`;
-    S.matches.filter(m=>m.group===grp).forEach(m=>{
-      h+=matchCardHTML(m,part?.pronos?.[m.id],isLocked(m),true,true);
-    });
+  if(sel)sel.innerHTML='<option value="">— Ver pronósticos de un participante —</option>'
+    +S.participants.map(p=>`<option value="${p.id}" ${p.id===selId?'selected':''}>${p.name}</option>`).join('');
+
+  // Filter matches by selected phase
+  const filtered=partidosPhase==='all'?S.matches:S.matches.filter(m=>m.phase===partidosPhase);
+
+  // Group by date
+  const byDate={};
+  filtered.forEach(m=>{
+    const d=m.date||'0000-00-00';
+    if(!byDate[d])byDate[d]=[];
+    byDate[d].push(m);
   });
+
+  let h='';
+  Object.keys(byDate).sort().forEach(dt=>{
+    const matches=byDate[dt];
+    const played=matches.filter(m=>m.result!==null);
+    const pending=matches.filter(m=>m.result===null);
+    const fmtDate=(s)=>{const[y,mo,d]=s.split('-');const months=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return`${parseInt(d)} ${months[parseInt(mo)-1]} ${y}`;};
+    const dateKey=dt.replace(/-/g,'');
+
+    // Header for the date
+    h+=`<div class="match-day-header" style="cursor:default;">${fmtDate(dt)}</div>`;
+
+    // Collapsible played section
+    if(played.length>0){
+      const collapsed=played.length>0&&pending.length>0; // auto-collapse if there are also pending
+      h+=`<div onclick="toggleDateGroup('${dateKey}')"
+        style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:5px 8px;margin-bottom:4px;background:rgba(255,255,255,.04);border-radius:8px;border:1px solid var(--border);">
+        <span id="dg-icon-${dateKey}" style="font-size:.65rem;color:var(--text2);">${collapsed?'▶':'▼'}</span>
+        <span style="font-size:.72rem;color:var(--text2);font-weight:700;">✅ ${played.length} partido${played.length!==1?'s':''} finalizado${played.length!==1?'s':''}</span>
+      </div>
+      <div id="dg-${dateKey}" style="display:${collapsed?'none':'block'};">`;
+      played.forEach(m=>{h+=matchCardHTML(m,part?.pronos?.[m.id],isLocked(m),true,true);});
+      h+='</div>';
+    }
+
+    // Pending matches (always visible)
+    pending.forEach(m=>{h+=matchCardHTML(m,part?.pronos?.[m.id],isLocked(m),true,true);});
+  });
+
+  if(!h)h='<div class="empty"><div class="empty-icon">📅</div>No hay partidos en esta fase</div>';
   document.getElementById('partidos-content').innerHTML=h;
 }
 </script>
